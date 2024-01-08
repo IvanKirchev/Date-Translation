@@ -12,20 +12,11 @@ def one_step_attention(a, s_prev):
     s_prev = REPEATOR(s_prev) # s_prev shape: (m, Tx, n_s)
     concat = CONCATENATOR([a, s_prev]) # concat shape: (m, Tx, n_s + 2*n_a)
 
-    e = DENSOR1(concat) # e shape: ?(m, 10, Tx + n_x + 2*n_a)
-    energies = DENSOR2(e) # energies shape: 
+    e = DENSOR1(concat) # e shape: (m, Tx, 10)
+    energies = DENSOR2(e) # energies shape: (m, Tx, 1)
 
-    alphas = ACTIVATOR(energies) # alphas shape: 
-    context = DOTOR([alphas, a]) # context shape: (m, )
-
-    '''
-    (None, 30, 64)
-    (None, 30, 128)
-    (None, 30, 10)
-    (None, 30, 1)
-    (None, 30, 1)
-    (None, 1, 64)
-    '''
+    alphas = ACTIVATOR(energies) # alphas shape: (m, Tx, 1)
+    context = DOTOR([alphas, a]) # context shape: (m, 1, 64)
 
     return context
 
@@ -48,9 +39,9 @@ def modelf(Tx, Ty, n_a, n_s, human_vocab_size, machine_vocab_size):
     s0 = tf.keras.layers.Input(shape=(n_s, ), name='input_cell_state')
     c0 = tf.keras.layers.Input(shape=(n_s, ), name='input_cell_context')
 
-    # hidden state
+    # post attention hidden state
     s = s0
-    # cell state
+    # post attention hidden context
     c = c0
 
     a = Bidirectional(LSTM(units=n_a, return_sequences=True))(X)
@@ -61,9 +52,9 @@ def modelf(Tx, Ty, n_a, n_s, human_vocab_size, machine_vocab_size):
     for y in range(Ty):
         context = one_step_attention(a, s)
 
-        _, s, c = post_activation_LSTM_cell(inputs = context, initial_state = [s, c])
+        _, s, c = POST_ATTENTION_LSTM_CELL(inputs = context, initial_state = [s, c])
 
-        output = output_layer(s)
+        output = OUTPUT_LAYER(s)
         outputs.append(output)
 
     model = tf.keras.Model(inputs = [X, s0, c0], outputs = outputs)
@@ -73,7 +64,7 @@ if __name__ == "__main__":
 
     Tx = 30
     Ty = 10
-    m = 100000
+    m = 10
 
     REPEATOR = tf.keras.layers.RepeatVector(Tx)
     CONCATENATOR = tf.keras.layers.Concatenate(axis=-1)
@@ -89,14 +80,14 @@ if __name__ == "__main__":
     n_s = 64 # number of units for the post-attention LSTM's hidden state "s"
 
     # Please note, this is the post attention LSTM cell.  
-    post_activation_LSTM_cell = LSTM(n_s, return_state = True) # Please do not modify this global variable.
-    output_layer = Dense(len(machine_vocab), activation=softmax)
+    POST_ATTENTION_LSTM_CELL = LSTM(n_s, return_state = True, name = 'post_attention_lstm') 
+    OUTPUT_LAYER = Dense(len(machine_vocab), activation=softmax)
 
     model = modelf(Tx, Ty, n_a, n_s, len(human_vocab), len(machine_vocab))
 
     optm = tf.keras.optimizers.Adam(learning_rate=0.005)
     model.compile(optimizer=optm, loss='categorical_crossentropy', metrics='accuracy')
-
+    print(model.summary())
     s0 = np.zeros((m, n_s))
     c0 = np.zeros((m, n_s))
     outputs = list(Yoh.swapaxes(0,1))
